@@ -385,6 +385,7 @@ class SessionServerTest {
 
         AttachedSession stuck = attach(slowClient, "slow", 80, 24); // never read until later
         AttachedSession healthy = attach(slowClient, "slow", 80, 24);
+        await(() -> fake.clients.size() == 2);
         byte[] pushed = new byte[4 * 1024 * 1024];
         for (int i = 0; i < pushed.length; i++) {
             pushed[i] = (byte) ('a' + (i % 26));
@@ -427,25 +428,17 @@ class SessionServerTest {
         assertArrayEquals(FakeSession.SNAPSHOT, Arrays.copyOf(all, FakeSession.SNAPSHOT.length));
         assertArrayEquals(pushed, Arrays.copyOfRange(all, FakeSession.SNAPSHOT.length, all.length));
         assertEquals(2, fake.clients.size(), "the stuck client is still attached (timeout far away)");
-        assertEquals(0, fake.snapshotForCalls.get(), "no re-snapshot while it has not drained");
-
-        // Now the stuck client drains: its writer finds the queue empty, BEHIND, and asks
-        // for a fresh snapshot which must show up in its stream.
+        // Socket and inbound-pipe buffers can accept early re-snapshots even while the
+        // application is not reading. Assert delivery and ordering, not a platform-
+        // dependent number of re-sync requests.
+        // Now the stuck client drains and must receive a fresh snapshot.
         String marker = new String(FakeSession.RESNAPSHOT, StandardCharsets.UTF_8);
         StringBuilder seen = new StringBuilder();
-        byte[] buf = new byte[65536];
-        long deadline = System.nanoTime() + WAIT.toNanos();
-        while (seen.indexOf(marker) < 0) {
-            assertTrue(System.nanoTime() < deadline, "re-snapshot never arrived");
-            int n = stuck.read(buf, 0, buf.length);
-            assertTrue(n >= 0, "stuck client stream ended before the re-snapshot");
-            seen.append(new String(buf, 0, n, StandardCharsets.ISO_8859_1));
-        }
+        readUntil(stuck, marker, seen);
         assertTrue(seen.toString().startsWith("<<SNAPSHOT>>"), "its original snapshot came first");
-        assertEquals(1, fake.snapshotForCalls.get());
+        assertTrue(fake.snapshotForCalls.get() >= 1, "a re-sync was requested");
         assertTrue(stuck.isConnected());
-        fake.push("after");
-        assertEquals("after", readText(stuck, 5), "live delivery resumed after the re-snapshot");
+        readUntil(stuck, "after-marker", new StringBuilder(), () -> fake.push("after-marker"));
     }
 
     @Test
@@ -1129,6 +1122,10 @@ class SessionServerTest {
      * queue the rest). Returns the still-unread attachment. */
     private AttachedSession attachAndFallBehind(SessionServerClient slowClient, FakeSession fake) throws Exception {
         AttachedSession stuck = attach(slowClient, "slow", 80, 24);
+        // The attach response precedes server-side registration. Wait for the fake
+        // client before pumping output or exiting; unlike PtySession, the fake does
+        // not replay an exit that happened before registration.
+        await(() -> fake.clients.size() == 1);
         byte[] chunk = new byte[4096];
         java.util.Arrays.fill(chunk, (byte) 'x');
         for (int pushed = 0; pushed < 2 * 1024 * 1024; pushed += chunk.length) {

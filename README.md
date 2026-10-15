@@ -117,8 +117,9 @@ sibling jpackage launcher next to the running executable, then
 
 The code is platform-neutral by construction — pty4j's ConPTY backend (opted in with
 `setUseWinConPty(true)`; a winpty fallback is reported as `backend: winpty` and is a
-degraded state), JDK Unix-domain sockets, `ProcessHandle` — but it has not been run on
-Windows as of this writing. Known gaps:
+degraded state), JDK Unix-domain sockets and `ProcessHandle`. A Windows x64 smoke
+test verified session creation with ConPTY, input, screen capture and shutdown.
+Known gaps:
 
 - `attach` from a console is not implemented on Windows (Harness Manager attaches over the
   socket, so the app is unaffected).

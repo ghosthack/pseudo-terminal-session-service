@@ -13,6 +13,20 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
+      - name: Install Apache Maven 3.9.16
+        run: |
+          set -euo pipefail
+          TASK_TOOLS="$RUNNER_TEMP/jmux-maven"
+          mkdir -p "$TASK_TOOLS"
+          URL="https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.16/apache-maven-3.9.16-bin.tar.gz"
+          curl -fsSL --retry 3 "$URL" -o "$TASK_TOOLS/maven.tar.gz"
+          curl -fsSL --retry 3 "$URL.sha512" -o "$TASK_TOOLS/maven.sha512"
+          EXPECTED="$(tr -d '[:space:]' < "$TASK_TOOLS/maven.sha512")"
+          [[ "$EXPECTED" =~ ^[0-9a-fA-F]{128}$ ]]
+          printf '%s  %s\n' "$EXPECTED" "$TASK_TOOLS/maven.tar.gz" | sha512sum --check
+          tar -xzf "$TASK_TOOLS/maven.tar.gz" -C "$TASK_TOOLS"
+          echo "$TASK_TOOLS/apache-maven-3.9.16/bin" >> "$GITHUB_PATH"
+          "$TASK_TOOLS/apache-maven-3.9.16/bin/mvn" --version
       - run: ./scripts/build.sh -Prelease -Dgpg.skip=true
       - run: python3 scripts/verify-release.py
       - run: java -jar target/jmux-0.1.0-cli.jar version

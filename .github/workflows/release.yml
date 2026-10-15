@@ -2,6 +2,13 @@ name: Release
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to publish or retry
+        required: true
+        type: string
+        default: v0.1.0
 permissions:
   contents: read
 concurrency:
@@ -9,20 +16,34 @@ concurrency:
   cancel-in-progress: false
 jobs:
   validate:
-    if: github.event.release.prerelease == false
+    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ format('refs/tags/{0}', inputs.release_tag || github.event.release.tag_name) }}
           persist-credentials: false
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
+      - name: Install Apache Maven 3.9.16
+        run: |
+          set -euo pipefail
+          TASK_TOOLS="$RUNNER_TEMP/jmux-maven"
+          mkdir -p "$TASK_TOOLS"
+          URL="https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.16/apache-maven-3.9.16-bin.tar.gz"
+          curl -fsSL --retry 3 "$URL" -o "$TASK_TOOLS/maven.tar.gz"
+          curl -fsSL --retry 3 "$URL.sha512" -o "$TASK_TOOLS/maven.sha512"
+          EXPECTED="$(tr -d '[:space:]' < "$TASK_TOOLS/maven.sha512")"
+          [[ "$EXPECTED" =~ ^[0-9a-fA-F]{128}$ ]]
+          printf '%s  %s\n' "$EXPECTED" "$TASK_TOOLS/maven.tar.gz" | sha512sum --check
+          tar -xzf "$TASK_TOOLS/maven.tar.gz" -C "$TASK_TOOLS"
+          echo "$TASK_TOOLS/apache-maven-3.9.16/bin" >> "$GITHUB_PATH"
+          "$TASK_TOOLS/apache-maven-3.9.16/bin/mvn" --version
       - name: Validate release coordinates and tag
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.event.release.tag_name }}
         run: |
           set -euo pipefail
           VERSION="$(mvn -q help:evaluate -Dexpression=project.version -DforceStdout)"
@@ -41,7 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ format('refs/tags/{0}', inputs.release_tag || github.event.release.tag_name) }}
           persist-credentials: false
       - uses: actions/setup-java@v5
         with:
@@ -52,6 +73,20 @@ jobs:
           server-password: MAVEN_CENTRAL_PASSWORD
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
           gpg-passphrase: GPG_PASSPHRASE
+      - name: Install Apache Maven 3.9.16
+        run: |
+          set -euo pipefail
+          TASK_TOOLS="$RUNNER_TEMP/jmux-maven"
+          mkdir -p "$TASK_TOOLS"
+          URL="https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.16/apache-maven-3.9.16-bin.tar.gz"
+          curl -fsSL --retry 3 "$URL" -o "$TASK_TOOLS/maven.tar.gz"
+          curl -fsSL --retry 3 "$URL.sha512" -o "$TASK_TOOLS/maven.sha512"
+          EXPECTED="$(tr -d '[:space:]' < "$TASK_TOOLS/maven.sha512")"
+          [[ "$EXPECTED" =~ ^[0-9a-fA-F]{128}$ ]]
+          printf '%s  %s\n' "$EXPECTED" "$TASK_TOOLS/maven.tar.gz" | sha512sum --check
+          tar -xzf "$TASK_TOOLS/maven.tar.gz" -C "$TASK_TOOLS"
+          echo "$TASK_TOOLS/apache-maven-3.9.16/bin" >> "$GITHUB_PATH"
+          "$TASK_TOOLS/apache-maven-3.9.16/bin/mvn" --version
       - name: Sign and publish to Maven Central
         run: mvn -B -ntp clean deploy -Prelease
         env:

@@ -8,7 +8,10 @@ contains the standalone `scripts/build.sh` build helper.
 
 ## Validation
 
-Requires JDK 25 or newer and Maven 3.9 or newer.
+Requires JDK 25 or newer and Maven 3.9. Release CI pins Apache Maven 3.9.16
+using the official distribution and its SHA-512 checksum. The Central plugin
+bundle has been validated with this version; Maven 3.10 produces incompatible
+extra artifact metadata with the current plugin.
 
 ```sh
 ./scripts/build.sh -Prelease -Dgpg.skip=true
@@ -36,6 +39,16 @@ Both artifacts are published as `io.github.ghosthack:jmux:0.1.0`:
 the ordinary Java library and the standalone JAR with classifier `cli`.
 Original jmux code is MIT licensed; dependencies retain their own licenses and
 notices in `THIRD-PARTY.md` and the bundled `META-INF/licenses` directory.
+
+A failed publication can be retried after fixing CI without moving the release
+tag. Run the release workflow from `main`, supplying the existing tag:
+
+```sh
+gh workflow run release.yml --ref main -f release_tag=v0.1.0
+```
+
+Both jobs check out that exact tag. Use this only when Central has not already
+published the version; published artifacts cannot be replaced.
 
 ## Secrets
 

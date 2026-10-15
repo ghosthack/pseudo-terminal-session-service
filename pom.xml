@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.github.ghosthack</groupId>
+  <artifactId>jmux</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+
+  <name>jmux</name>
+  <description>Persistent terminal sessions with a headless emulator and a Java client.</description>
+  <url>https://github.com/ghosthack/pseudo-terminal-session-service</url>
+  <licenses>
+    <license><name>MIT License</name><url>https://opensource.org/licenses/MIT</url><distribution>repo</distribution></license>
+  </licenses>
+  <developers>
+    <developer><id>ghosthack</id><name>ghosthack</name><url>https://github.com/ghosthack</url></developer>
+  </developers>
+  <scm>
+    <connection>scm:git:https://github.com/ghosthack/pseudo-terminal-session-service.git</connection>
+    <developerConnection>scm:git:git@github.com:ghosthack/pseudo-terminal-session-service.git</developerConnection>
+    <url>https://github.com/ghosthack/pseudo-terminal-session-service</url>
+    <tag>v0.1.0</tag>
+  </scm>
+
+  <properties>
+    <jediterm.version>3.76-ghosthack.2</jediterm.version>
+    <maven.compiler.release>25</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <mainClass>io.github.ghosthack.jmux.Main</mainClass>
+    <junit.version>5.11.4</junit.version>
+  </properties>
+
+
+  <repositories>
+    <!-- pty4j is available anonymously from JetBrains; our JediTerm core is on Central. -->
+    <repository>
+      <id>intellij-dependencies</id>
+      <url>https://packages.jetbrains.team/maven/p/ij/intellij-dependencies</url>
+    </repository>
+  </repositories>
+
+  <dependencies>
+    <!-- Headless emulator: JediTerminal + TerminalTextBuffer + JediEmulator run without
+         Swing; only jediterm-ui needs a display, and this project never depends on it. -->
+    <dependency>
+      <groupId>io.github.ghosthack</groupId>
+      <artifactId>jediterm-core</artifactId>
+      <version>${jediterm.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.pty4j</groupId>
+      <artifactId>pty4j</artifactId>
+      <version>0.13.10</version>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>2.18.2</version>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>2.0.17</version>
+    </dependency>
+    <!-- The CLI needs a binding; an embedding app (Harness Manager) brings its own. -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <version>2.0.17</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <resources>
+      <resource><directory>src/main/resources</directory></resource>
+      <resource><directory>licenses</directory><targetPath>META-INF/licenses</targetPath></resource>
+      <resource><directory>.</directory><targetPath>META-INF</targetPath><includes><include>LICENSE</include><include>THIRD-PARTY.md</include></includes></resource>
+    </resources>
+    <plugins>
+      <plugin>
+        <!-- Implementation-Version in the manifest is what `version`/`ping` report;
+             without it ServerVersion falls back to "dev". -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.2</version>
+        <configuration>
+          <archive>
+            <manifest>
+              <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+            </manifest>
+          </archive>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.2</version>
+        <configuration>
+          <!-- pty4j loads its native helper through the FFM API. -->
+          <argLine>--enable-native-access=ALL-UNNAMED</argLine>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals><goal>shade</goal></goals>
+            <configuration>
+              <!-- The plain jar (the one Harness Manager depends on) stays the main
+                   artifact; the runnable CLI jar is a classified sibling. -->
+              <shadedArtifactAttached>true</shadedArtifactAttached>
+              <shadedClassifierName>cli</shadedClassifierName>
+              <!-- The plain jar is the main artifact and needs its dependencies declared;
+                   a reduced pom would strip them for consumers such as Harness Manager. -->
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>${mainClass}</mainClass>
+                  <manifestEntries>
+                    <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
+                  </manifestEntries>
+                </transformer>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+  <profiles>
+    <!-- Same release tooling as ffmpeg-ffm and panama-media. -->
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-resources-plugin</artifactId>
+            <version>3.3.1</version>
+            <executions>
+              <execution>
+                <id>javadoc-license-notices</id><phase>generate-resources</phase><goals><goal>copy-resources</goal></goals>
+                <configuration>
+                  <outputDirectory>${project.build.directory}/javadoc-resources/doc-files</outputDirectory>
+                  <resources><resource><directory>.</directory><includes><include>LICENSE</include><include>THIRD-PARTY.md</include></includes><filtering>false</filtering></resource></resources>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <version>3.3.1</version>
+            <executions><execution><id>attach-sources</id><goals><goal>jar-no-fork</goal></goals></execution></executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <version>3.11.2</version>
+            <configuration><doclint>none</doclint><quiet>true</quiet><docfilessubdirs>true</docfilessubdirs><javadocDirectory>${project.build.directory}/javadoc-resources</javadocDirectory></configuration>
+            <executions><execution><id>attach-javadocs</id><goals><goal>jar</goal></goals></execution></executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.2.7</version>
+            <executions><execution><id>sign-artifacts</id><phase>verify</phase><goals><goal>sign</goal></goals></execution></executions>
+          </plugin>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.11.0</version>
+            <extensions>true</extensions>
+            <configuration><publishingServerId>central</publishingServerId><autoPublish>true</autoPublish><waitUntil>published</waitUntil></configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

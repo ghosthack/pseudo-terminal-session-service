@@ -1,0 +1,18 @@
+name: Build public source
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - run: ./scripts/build.sh -Prelease -Dgpg.skip=true
+      - run: python3 scripts/verify-release.py
+      - run: java -jar target/jmux-0.1.0-cli.jar version
